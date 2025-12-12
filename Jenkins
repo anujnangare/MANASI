@@ -1,31 +1,71 @@
 pipeline {
     agent any
 
+    environment {
+        AWS_DEFAULT_REGION = "ap-south-1"     // Change region
+    }
+
     stages {
-        stage('Checkout') {
+
+        stage('Checkout Code') {
             steps {
-                git branch: 'main', 
-                credentialsId: '<CREDS>', 
+                git branch: 'main',
+                credentialsId: 'AWS_ACCESS_KEY_ID',
                 url: 'https://github.com/anujnangare/MANASI.git'
             }
-            
-        
-        stage('Terraform init') {
+        }
+
+        stage('Terraform Init') {
             steps {
-                sh 'terraform init'
+                sh '''
+                terraform init
+                '''
             }
         }
-        stage('Terraform plan') {
+
+        stage('Terraform Validate') {
             steps {
-                sh 'terraform plan -out=tfplan'
+                sh '''
+                terraform validate
+                '''
             }
         }
-        stage('Terraform apply') {
+
+        stage('Terraform Plan') {
             steps {
-                sh 'terraform apply --auto-approve'
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'AWS_ACCESS_KEY_ID'
+                ]]) {
+                    sh '''
+                    terraform plan -out=tfplan
+                    '''
+                }
             }
         }
-        
+
+        stage('Terraform Apply') {
+            when {
+                expression { return params.APPLY_CHANGES == true }
+            }
+            steps {
+                withCredentials([[
+                    $class: 'AmazonWebServicesCredentialsBinding',
+                    credentialsId: 'AWS_ACCESS_KEY_ID'
+                ]]) {
+                    sh '''
+                    terraform apply -auto-approve tfplan
+                    '''
+                }
+            }
+        }
     }
-}
+
+    parameters {
+        booleanParam(
+            name: 'APPLY_CHANGES',
+            defaultValue: false,
+            description: 'Apply Terraform changes?'
+        )
+    }
 }
